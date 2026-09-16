@@ -47,17 +47,18 @@ jobs:
         # NET_ADMIN only inside the disposable container: the local probe endpoint
         # gets a non-private address on lo, so no third-party site is involved.
         run: |
+          set -o pipefail
           docker run --rm --cap-add NET_ADMIN -v "$PWD:/source:ro" "ubuntu:$UBUNTU" bash -c '
             set -e
-            apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 ca-certificates curl openssl nginx iproute2
+            apt-get -o Acquire::Retries=5 update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y -qq python3 ca-certificates curl openssl nginx iproute2
             cp -r /source /test
             chown -R root:root /test
             cd /test
             python3 -m unittest discover -s tests -v
             python3 tools/build.py
             python3 tests/integration.py
-          '
+          ' 2>&1 | tee "$RUNNER_TEMP/linux.log"
       - name: Full installation under systemd
         timeout-minutes: 25
         env:
@@ -65,18 +66,18 @@ jobs:
         # A privileged throwaway container boots systemd as PID 1, like a VPS.
         # nginx is preinstalled only for the local fixtures and left disabled.
         run: |
-          docker build -q -t ruavc-vps --build-arg UBUNTU="$UBUNTU" - <<'EOF'
+          set -o pipefail
+          {
+            docker build -q -t ruavc-vps --build-arg UBUNTU="$UBUNTU" - <<'EOF'
           ARG UBUNTU
           FROM ubuntu:${UBUNTU}
-          RUN apt-get update -qq \
-           && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq systemd systemd-sysv python3 ca-certificates curl openssl nginx iproute2 \
+          RUN apt-get -o Acquire::Retries=5 update -qq \
+           && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y -qq systemd systemd-sysv python3 ca-certificates curl openssl nginx iproute2 \
            && rm -f /etc/systemd/system/multi-user.target.wants/nginx.service
           CMD ["/lib/systemd/systemd"]
           EOF
-          docker run -d --name vps --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-            --tmpfs /run:exec --tmpfs /run/lock -e container=docker -v "$PWD:/source:ro" ruavc-vps
-          set -o pipefail
-          {
+            docker run -d --name vps --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+              --tmpfs /run:exec --tmpfs /run/lock -e container=docker -v "$PWD:/source:ro" ruavc-vps
             for _ in $(seq 90); do
               docker exec vps test -S /run/systemd/private && break
               sleep 1
@@ -91,14 +92,14 @@ jobs:
               python3 tools/build.py
               python3 tests/systemd_integration.py
             '
-          } 2>&1 | tee "$RUNNER_TEMP/systemd.log"
-      - name: Report systemd installation failure
+          } 2>&1 | tee "$RUNNER_TEMP/linux.log"
+      - name: Report failure
         if: failure()
         # Annotations stay readable without access to the full job log.
         run: |
-          test -f "$RUNNER_TEMP/systemd.log" || exit 0
-          tail -n 150 "$RUNNER_TEMP/systemd.log" | split -l 30 - "$RUNNER_TEMP/part-"
+          test -f "$RUNNER_TEMP/linux.log" || exit 0
+          tail -n 150 "$RUNNER_TEMP/linux.log" | split -l 30 - "$RUNNER_TEMP/part-"
           for part in "$RUNNER_TEMP"/part-*; do
             body=$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' "$part" | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g')
-            echo "::error title=systemd $(basename "$part")::$body"
+            echo "::error title=log $(basename "$part")::$body"
           done
