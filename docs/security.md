@@ -1,4 +1,4 @@
-# Безопасность и ограничения 0.1.1
+# Безопасность и ограничения 0.1.2
 
 ## Реализованные границы
 
@@ -66,6 +66,7 @@
 - [Профили маршрутизации](https://docs.incy.cc/routing/)
 - [Reality в Xray](https://xtls.github.io/en/config/transports/reality.html)
 - [Российские IP и private](https://github.com/golukon/russia-only-geoip)
-- [Российские домены ru-inside](https://github.com/golukon/russia-only-geosite)
+- [Российские домены ru-inside](https://github.com/golukon/russia-only-geosite);
+  в профиль INCY категория передаётся явным списком доменов
 
 Форматы проверены по этим первичным источникам 16 сентября 2026 года.

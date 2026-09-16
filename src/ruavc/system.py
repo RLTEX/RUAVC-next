@@ -11,7 +11,7 @@ import tempfile
 import time
 
 from .errors import Error
-from . import network, render
+from . import datasets, network, render
 from .storage import digest, encoded, mkdir, read, safe_path, write
 
 
@@ -216,12 +216,13 @@ class Services:
             code, _, data = network.local_https(c, base + ".sha256")
             if code != 200 or data.decode().strip() != expected:
                 raise Error("HTTPS отдаёт неверную контрольную сумму geo-файла.")
+        profile = encoded(render.routing(bundle, datasets.direct_sites(self.store, dataset)))
         for device in bundle["devices"]:
             code, headers, body = network.local_https(c, "/sub/" + device["token"])
             if code != 200 or body != render.subscription(bundle, device).encode() or headers.get("autorouting") != render.autorouting(c, device):
                 raise Error("Подписка не соответствует активной конфигурации.")
             code, _, body = network.local_https(c, "/routing/" + device["token"] + ".json")
-            if code != 200 or body != encoded(render.routing(bundle)):
+            if code != 200 or body != profile:
                 raise Error("INCY получает устаревший профиль маршрутизации.")
         for token in revoked_tokens:
             for path in ("/sub/" + token, "/routing/" + token + ".json"):

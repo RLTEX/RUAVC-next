@@ -27,6 +27,28 @@ class RoutingContract(unittest.TestCase):
         self.assertEqual(p["GlobalProxy"], "true")
         self.assertEqual(p["DomainStrategy"], "IPIfNonMatch")
 
+    def test_profile_does_not_depend_on_client_geosite(self):
+        # INCY for Windows resolves geosite: with its bundled file, which has no RU-INSIDE.
+        b = bundle()
+        b["sites"] = model.parse_sites("[напрямую]\ngeosite:ru-inside\n")
+        p = render.routing(b, ["domain:2gis.com"])
+        self.assertFalse([x for x in p["DirectSites"] if x.startswith("geosite:")])
+        self.assertIn("domain:2gis.com", p["DirectSites"])
+        b["config"]["routing"]["direct"] = False
+        self.assertEqual(render.routing(b, ["domain:2gis.com"])["DirectSites"], sorted(render.RU_SITES + ["domain:2gis.com"]))
+
+    def test_russian_category_is_expanded_from_the_dataset(self):
+        import tempfile
+        from pathlib import Path
+        from helpers import PortableStore, populate
+        from ruavc import datasets
+        with tempfile.TemporaryDirectory() as temp:
+            store = PortableStore(Path(temp))
+            b = populate(store, bundle())
+            self.assertEqual(datasets.direct_sites(store, b["release"]["dataset"]), ["domain:2gis.com", "full:api.example.org"])
+            with self.assertRaises(Error):
+                datasets.direct_sites(store, "../x")
+
     def test_off_only_disables_automatic_russian_rules(self):
         b = bundle()
         b["sites"] = model.parse_sites("[direct]\ngeoip:ru\nexample.org\n[proxy]\nexample.ru")

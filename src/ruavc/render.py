@@ -6,7 +6,8 @@ from urllib.parse import quote, urlencode, urlsplit
 from .model import normalize_rule
 
 LOCAL_IPS = ["geoip:private", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "224.0.0.0/4", "255.255.255.255/32", "::1/128", "fc00::/7", "fe80::/10", "ff00::/8"]
-RU_SITES = ["domain:ru", "domain:su", "domain:xn--p1ai", "domain:xn--p1acf", "geosite:ru-inside"]
+# No geosite: references: INCY for Windows resolves them in its bundled geo files.
+RU_SITES = ["domain:ru", "domain:su", "domain:xn--p1ai", "domain:xn--p1acf"]
 COUNTRIES = {"DE": "Германия", "NL": "Нидерланды", "FI": "Финляндия", "FR": "Франция", "US": "США", "GB": "Великобритания", "RU": "Россия", "TR": "Турция", "KZ": "Казахстан", "SE": "Швеция", "PL": "Польша", "CH": "Швейцария", "AT": "Австрия", "CA": "Канада", "AM": "Армения", "GE": "Грузия", "JP": "Япония", "SG": "Сингапур"}
 
 
@@ -48,7 +49,8 @@ def subscription(bundle, device):
     return f"#profile-title: base64:{title}\n#profile-update-interval: 24\n{vless(bundle, device)}\n{autorouting(c, device)}\n"
 
 
-def routing(bundle):
+def routing(bundle, ru_sites=()):
+    """ru_sites: the expanded ru-inside category (datasets.direct_sites)."""
     c = bundle["config"]
     r = c["routing"]
     base = origin(c) + "/rules/" + bundle["release"]["dataset"]
@@ -57,14 +59,17 @@ def routing(bundle):
               "DomesticDNSType": "DoH", "DomesticDNSDomain": r["domestic_dns"], "DomesticDNSIP": r["domestic_dns_ip"],
               "DnsHosts": {urlsplit(r["remote_dns"]).hostname: r["remote_dns_ip"], urlsplit(r["domestic_dns"]).hostname: r["domestic_dns_ip"]},
               "Geoipurl": base + "/geoip.dat", "Geositeurl": base + "/geosite.dat",
-              "DirectSites": list(RU_SITES) if r["direct"] else [], "DirectIp": LOCAL_IPS + (["geoip:ru"] if r["direct"] else []),
+              "DirectSites": RU_SITES + list(ru_sites) if r["direct"] else [], "DirectIp": LOCAL_IPS + (["geoip:ru"] if r["direct"] else []),
               "ProxySites": [], "ProxyIp": [], "BlockSites": [], "BlockIp": [],
               "RouteOrder": "block-proxy-direct", "DomainStrategy": "IPIfNonMatch", "FakeDNS": "false"}
     for section, entries in bundle["sites"].items():
         for entry in entries:
             kind, value = normalize_rule(entry)
             key = ("Direct" if section == "direct" else "Proxy") + ("Ip" if kind == "ip" else "Sites")
-            result[key].append(value)
+            if value == "geosite:ru-inside":
+                result[key].extend(RU_SITES + list(ru_sites))
+            else:
+                result[key].append(value)
     for key in ("DirectSites", "DirectIp", "ProxySites", "ProxyIp"):
         result[key] = sorted(set(result[key]))
     return result
@@ -94,8 +99,8 @@ def probe_client(bundle, device, socks_port):
             "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {"serverName": r["sni"], "fingerprint": r["fingerprint"], "password": s["public_key"], "shortId": s["short_id"]}}}]}
 
 
-def routing_test(bundle):
-    p = routing(bundle)
+def routing_test(bundle, ru_sites=()):
+    p = routing(bundle, ru_sites)
     rules = []
     for prefix, out in (("Proxy", "proxy"), ("Direct", "direct")):
         for suffix, field in (("Sites", "domain"), ("Ip", "ip")):

@@ -27,7 +27,9 @@ def field(number, value):
 def geo(kind):
     if kind == "geoip":
         return b"".join(field(1, field(1, tag) + field(2, field(1, ip) + b"\x10\x08")) for tag, ip in ((b"RU", b"\x05\x00\x00\x00"), (b"PRIVATE", b"\x0a\x00\x00\x00")))
-    return field(1, field(1, b"RU-INSIDE") + field(2, b"\x08\x02" + field(2, b"example.ru")))
+    entries = b"".join(field(2, b"\x08" + bytes([kind]) + field(2, name))
+                       for kind, name in ((2, b"example.ru"), (2, b"2gis.com"), (3, b"api.example.org"), (2, b"mail.xn--p1ai")))
+    return field(1, field(1, b"RU-INSIDE") + entries)
 
 
 def bundle():

@@ -18,13 +18,14 @@ class Transaction:
     def prepare(self, bundle):
         model.validate(bundle)
         datasets.verify(self.store, bundle["release"]["dataset"])
+        ru_sites = datasets.direct_sites(self.store, bundle["release"]["dataset"])
         name = "g-" + secrets.token_hex(12)
         generation = mkdir(self.store.generation(name), 0o711)
         for part in ("config", "secrets", "devices", "sites", "release"):
             write(generation / (part + ".json"), encoded(bundle[part]))
         generated = mkdir(generation / "generated", 0o755)
         write(generated / "xray.json", encoded(render.xray(bundle)), 0o640, self.gids["xray"])
-        write(generated / "routing-test.json", encoded(render.routing_test(bundle)))
+        write(generated / "routing-test.json", encoded(render.routing_test(bundle, ru_sites)))
         launch = {"code": str(self.store.opt / "code" / bundle["release"]["code_sha256"] / "ruavc.pyz"), "xray": str(self.services.xray_path(bundle))}
         write(generated / "launch.json", encoded(launch), 0o644)
         write(generated / "nginx.conf", render.nginx(bundle, generation, self.store.state / "datasets"), 0o644)
@@ -33,7 +34,7 @@ class Transaction:
             mkdir(web / sub, 0o750, self.gids["web"])
         for device in bundle["devices"]:
             write(web / "sub" / device["token"], render.subscription(bundle, device), 0o640, self.gids["web"])
-            write(web / "routing" / (device["token"] + ".json"), encoded(render.routing(bundle)), 0o640, self.gids["web"])
+            write(web / "routing" / (device["token"] + ".json"), encoded(render.routing(bundle, ru_sites)), 0o640, self.gids["web"])
         manifest = {}
         for path in sorted(generation.rglob("*")):
             if path.is_file():

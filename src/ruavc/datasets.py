@@ -91,6 +91,47 @@ def validate_geo(data, kind):
     return tags
 
 
+# Xray Domain.Type -> rule prefix.
+DOMAIN_RULES = {0: "keyword:", 1: "regexp:", 2: "domain:", 3: "full:"}
+RU_ZONES = ("ru", "su", "xn--p1ai", "xn--p1acf")
+DIRECT_CATEGORY = "ru-inside"
+
+
+def category_rules(data, code):
+    rules = set()
+    for _, _, group in fields(data):
+        entries = list(fields(group))
+        if not any(f == 1 and v.decode("ascii").lower() == code for f, _, v in entries):
+            continue
+        for f, _, value in entries:
+            if f == 2:
+                entry = {k: v for k, _, v in fields(value)}
+                rules.add(DOMAIN_RULES[entry.get(1, 0)] + entry[2].decode("utf-8"))
+    return rules
+
+
+def direct_sites(store, identifier):
+    """Russian services as explicit rules: clients may route with their own geo files.
+
+    INCY for Windows applies the server profile with its bundled geosite.dat,
+    which has no RU-INSIDE category, so a geosite: reference breaks Xray there.
+    """
+    if not re.fullmatch(r"[0-9a-f]{64}", identifier):
+        raise Error("Неверный идентификатор geo-данных.")
+    data = read(store.state / "datasets" / identifier / "geosite.dat", limit=32 * 1024 * 1024)
+    zones = tuple("." + zone for zone in RU_ZONES)
+    result = []
+    for rule in sorted(category_rules(data, DIRECT_CATEGORY)):
+        prefix, _, value = rule.partition(":")
+        if prefix in ("domain", "full") and not re.fullmatch(r"[a-z0-9._-]+", value):
+            raise Error("Некорректный домен в geo-категории.")
+        # The zones are routed directly by suffix rules already.
+        if prefix in ("domain", "full") and ("." + value).endswith(zones):
+            continue
+        result.append(rule)
+    return result
+
+
 def download(store, config):
     parts = {}
     metadata = {}

@@ -176,7 +176,8 @@ def main():
         assert network.local_https(c, "/sub/" + "0" * 64)[0] == 404
         assert network.local_https(c, "/rules/../secrets.json")[0] != 200
         status, _, body = network.local_https(c, "/routing/" + d["token"] + ".json")
-        assert status == 200 and body == encoded(render.routing(b))
+        assert status == 200 and body == encoded(render.routing(b, datasets.direct_sites(store, dataset)))
+        assert "geosite:" not in body.decode()
         for kind in ("geoip", "geosite"):
             status, _, body = network.local_https(c, f"/rules/{dataset}/{kind}.dat")
             assert status == 200
