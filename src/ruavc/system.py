@@ -179,15 +179,29 @@ class Services:
                 log("VLESS self-test: " + probe_diagnostic(bundle, device, detail, read(output)))
                 raise Error(failure + " Диагностика: /var/log/ruavc/manager.log.", "sudo ruavc doctor")
 
-    def health(self, generation, bundle, revoked_tokens=()):
-        for name in self.names:
-            if not self.active(name):
-                raise Error(f"Служба {name} не работает.")
-        self.running_generation(generation)
+    def ready(self, generation, bundle, timeout=20):
+        # Type=simple units are "active" before the launcher execs Xray/nginx and
+        # before they listen, so a restart is followed by a bounded wait.
         c = bundle["config"]
-        for number in (c["reality"]["port"], c["web"]["port"]):
-            if not listening(number):
-                raise Error(f"Служба не слушает TCP {number}.")
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                for name in self.names:
+                    if not self.active(name):
+                        raise Error(f"Служба {name} не работает.")
+                self.running_generation(generation)
+                for number in (c["reality"]["port"], c["web"]["port"]):
+                    if not listening(number):
+                        raise Error(f"Служба не слушает TCP {number}.")
+                return
+            except Error:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.2)
+
+    def health(self, generation, bundle, revoked_tokens=()):
+        self.ready(generation, bundle)
+        c = bundle["config"]
         network.tls_probe("127.0.0.1", c["reality"]["port"], c["reality"]["sni"], public=False)
         status, _, _ = network.local_https(c, "/")
         if status != 404:

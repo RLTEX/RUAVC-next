@@ -12,6 +12,7 @@ import time
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener, HTTPSHandler
 
+from . import __version__
 from .errors import Error
 from .model import domain, https_url, target
 
@@ -26,7 +27,7 @@ def fetch(url, limit=4 * 1024 * 1024, timeout=20):
     https_url(url)
     # A privileged installer must not inherit an arbitrary caller's proxy.
     opener = build_opener(ProxyHandler({}), HTTPSRedirect(), HTTPSHandler(context=ssl.create_default_context()))
-    req = Request(url, headers={"User-Agent": "ruavc/0.1.0", "Accept": "application/vnd.github+json" if "api.github.com/" in url else "*/*"})
+    req = Request(url, headers={"User-Agent": "ruavc/" + __version__, "Accept": "application/vnd.github+json" if "api.github.com/" in url else "*/*"})
     try:
         with opener.open(req, timeout=timeout) as response:
             result = response.read(limit + 1)

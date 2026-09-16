@@ -58,3 +58,29 @@ jobs:
             python3 tools/build.py
             python3 tests/integration.py
           '
+      - name: Full installation under systemd
+        timeout-minutes: 25
+        env:
+          UBUNTU: ${{ matrix.ubuntu }}
+        # A privileged throwaway container boots systemd as PID 1, like a VPS.
+        # nginx is preinstalled only for the local fixtures and left disabled.
+        run: |
+          docker build -q -t ruavc-vps --build-arg UBUNTU="$UBUNTU" - <<'EOF'
+          ARG UBUNTU
+          FROM ubuntu:${UBUNTU}
+          RUN apt-get update -qq \
+           && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq systemd systemd-sysv python3 ca-certificates curl openssl nginx iproute2 \
+           && rm -f /etc/systemd/system/multi-user.target.wants/nginx.service
+          CMD ["/lib/systemd/systemd"]
+          EOF
+          docker run -d --name vps --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
+            --tmpfs /run:exec --tmpfs /run/lock -v "$PWD:/source:ro" ruavc-vps
+          docker exec vps bash -c 'systemctl is-system-running --wait || systemctl --failed --no-pager'
+          docker exec vps bash -c '
+            set -e
+            cp -r /source /test
+            chown -R root:root /test
+            cd /test
+            python3 tools/build.py
+            python3 tests/systemd_integration.py
+          '

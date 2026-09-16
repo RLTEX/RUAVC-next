@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from helpers import FakeServices, PortableStore, bundle, populate
-from ruavc import backup, doctor, model
+from ruavc import backup, cli, doctor, model, system
 from ruavc.errors import Error
 from ruavc.storage import encoded, read_json, write
 from ruavc.transaction import Transaction
@@ -160,6 +160,61 @@ class Transactions(unittest.TestCase):
                 with self.store.lock():
                     pass
         self.assertEqual(failure.exception.code, 3)
+
+
+class ServiceStartup(unittest.TestCase):
+    """systemd reports Type=simple units active before Xray/nginx listen."""
+
+    def setUp(self):
+        self.services = system.Services(PortableStore(Path(tempfile.gettempdir())))
+        self.bundle = bundle()
+        sleeps = patch("ruavc.system.time.sleep")
+        sleeps.start()
+        self.addCleanup(sleeps.stop)
+
+    def test_waits_until_launcher_execs_and_ports_listen(self):
+        launcher = [Error("Xray работает с другой версией конфигурации."), None, None]
+        ports = iter([False, True, True])
+        with patch.object(self.services, "active", return_value=True), \
+                patch.object(self.services, "running_generation", side_effect=launcher), \
+                patch("ruavc.system.listening", side_effect=lambda number: next(ports)):
+            self.services.ready(Path("g"), self.bundle)
+
+    def test_gives_up_with_the_last_reason(self):
+        with patch.object(self.services, "active", return_value=False), \
+                patch("ruavc.system.time.monotonic", side_effect=[0, 1, 30]):
+            with self.assertRaisesRegex(Error, "не работает"):
+                self.services.ready(Path("g"), self.bundle)
+
+
+class Diagnostics(unittest.TestCase):
+    def test_rollback_shows_redacted_root_cause(self):
+        try:
+            try:
+                raise Error("Служба не слушает TCP 8443.")
+            except Error as original:
+                raise Error("Изменение отменено: предыдущая конфигурация восстановлена.") from original
+        except Error as exc:
+            self.assertEqual(cli.cause(exc), "Служба не слушает TCP 8443.")
+        leaked = Error("Изменение отменено.")
+        leaked.__cause__ = OSError("vless://secret@host path /sub/" + "a" * 64)
+        self.assertEqual(cli.cause(leaked), "OSError: [VLESS скрыт] path /sub/[скрыто]")
+        self.assertEqual(cli.cause(Error("без причины")), "")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX ownership")
+    def test_group_writable_var_log_is_accepted_only_for_logs(self):
+        real_lstat = Path.lstat
+
+        def lstat(path):
+            info = real_lstat(Path("/"))
+            if path in (Path("/var/log"), Path("/var/lib")):
+                return os.stat_result((info.st_mode | 0o020, *tuple(info)[1:4], 0, *tuple(info)[5:]))
+            return info
+        with patch("pathlib.Path.lstat", lstat):
+            from ruavc.storage import safe_path
+            self.assertEqual(safe_path("/var/log/ruavc/manager.log"), Path("/var/log/ruavc/manager.log"))
+            with self.assertRaises(Error):
+                safe_path("/var/lib/ruavc")
 
 
 if __name__ == "__main__":

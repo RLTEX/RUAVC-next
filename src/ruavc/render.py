@@ -121,7 +121,12 @@ http {{
     client_body_timeout 10s;
     client_header_timeout 10s;
     keepalive_timeout 15s;
+    # The unit's file system is read-only except /run/ruavc-web.
     client_body_temp_path /run/ruavc-web/body;
+    proxy_temp_path /run/ruavc-web/proxy;
+    fastcgi_temp_path /run/ruavc-web/fastcgi;
+    uwsgi_temp_path /run/ruavc-web/uwsgi;
+    scgi_temp_path /run/ruavc-web/scgi;
     sendfile on;
     server {{
         listen {w["port"]} ssl;

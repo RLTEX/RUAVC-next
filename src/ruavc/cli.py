@@ -370,6 +370,15 @@ def version_tuple(value):
     return tuple(int(x) for x in value.split("."))
 
 
+def cause(exc):
+    """The redacted root failure behind a rollback message, shown to the operator."""
+    original = exc.__cause__
+    if original is None:
+        return ""
+    text = str(original) if isinstance(original, Error) else f"{type(original).__name__}: {original}"
+    return system.redact(text)[:500]
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in {"help", "--help", "-h"}:
@@ -397,12 +406,15 @@ def main(argv=None):
         with store.lock():
             return dispatch(args, store, services, tx)
     except Error as exc:
+        reason = cause(exc)
         if os.name == "posix" and os.geteuid() == 0:
             try:
-                system.log(str(exc) + ("; cause=" + str(exc.__cause__) if exc.__cause__ else ""))
+                system.log(str(exc) + ("; cause=" + reason if reason else ""))
             except (Error, OSError):
                 pass
         print("Ошибка: " + system.redact(str(exc)), file=sys.stderr)
+        if reason:
+            print("Причина: " + reason, file=sys.stderr)
         print("Следующая команда: " + exc.hint, file=sys.stderr)
         print("Подробный журнал: /var/log/ruavc/manager.log", file=sys.stderr)
         return exc.code

@@ -40,12 +40,17 @@ def certificate(name, *extra):
     return key, crt
 
 
-def fixtures():
+def local_address(address, *names):
+    system.run([shutil.which("ip", path="/usr/sbin:/usr/bin:/sbin:/bin"), "address", "add", address + "/32", "dev", "lo"])
+    if names:
+        with open("/etc/hosts", "a", encoding="utf-8") as hosts:
+            hosts.write(address + " " + " ".join(names) + "\n")
+
+
+def fixtures(reality_listen="127.0.0.1:19445"):
     """Reality targets (compatible and oversized) and the probe endpoint."""
     mkdir(FIXTURES, 0o755)
-    system.run([shutil.which("ip", path="/usr/sbin:/usr/bin:/sbin:/bin"), "address", "add", PROBE_ADDRESS + "/32", "dev", "lo"])
-    with open("/etc/hosts", "a", encoding="utf-8") as hosts:
-        hosts.write(f"{PROBE_ADDRESS} {PROBE_HOST}\n")
+    local_address(PROBE_ADDRESS, PROBE_HOST)
     small = certificate(REALITY_SNI)
     # Incompressible payload: TLS certificate compression must not hide the size,
     # like a stapled OCSP chain that is larger than REALITY's 8192-byte buffer.
@@ -64,7 +69,7 @@ def fixtures():
         {body}
     }}
 """
-    servers = (server("127.0.0.1:19445", REALITY_SNI, small, "return 404;")
+    servers = (server(reality_listen, REALITY_SNI, small, "return 404;")
                + server("127.0.0.1:19446", OVERSIZED_SNI, large, "return 404;")
                + server(PROBE_ADDRESS + ":443", PROBE_HOST, probe, "location = /generate_204 { return 204; } location / { return 404; }"))
     conf = FIXTURES / "nginx.conf"

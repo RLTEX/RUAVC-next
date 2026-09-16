@@ -41,7 +41,10 @@ def safe_path(path, allow_missing=True):
             raise Error("Обнаружена неподдерживаемая символическая ссылка в управляемом пути.")
         if os.name == "posix" and (info.st_uid not in {0, os.geteuid()} or info.st_mode & 0o022):
             # Sticky /tmp is permitted only as an ancestor of a private test/staging root.
-            if not (part == Path("/tmp") and info.st_mode & stat.S_ISVTX):
+            # Ubuntu ships /var/log as root:syslog 0775; only the log daemon's group may write.
+            shared_tmp = part == Path("/tmp") and info.st_mode & stat.S_ISVTX
+            system_log = part == Path("/var/log") and info.st_uid == 0 and not info.st_mode & 0o002
+            if not (shared_tmp or system_log):
                 raise Error("Управляемый путь не принадлежит root или доступен для посторонней записи.")
     return path
 
