@@ -86,7 +86,7 @@ def main():
         sh(ruavc, "repair")
         sh(ruavc, "rollback")
         sh(ruavc, "status")
-        failed = sh(ruavc, "add", "phone", expect=1)
+        failed = sh(ruavc, "add", "phone", expect=2)
         assert "Устройство уже существует" in failed.stderr, failed.stderr
         log = Path("/var/log/ruavc/manager.log")
         assert log.is_file() and stat.S_IMODE(log.stat().st_mode) == 0o600, "manager.log is not written"
