@@ -49,6 +49,22 @@ class RoutingContract(unittest.TestCase):
             with self.assertRaises(Error):
                 datasets.direct_sites(store, "../x")
 
+    def test_dataset_revision_comes_from_git_refs(self):
+        from unittest.mock import patch
+
+        def pkt(text):
+            return b"%04x" % (len(text) + 4) + text
+        head = "a" * 40
+        release = "b" * 40
+        advert = (pkt(b"# service=git-upload-pack\n") + b"0000" + pkt(f"{head} HEAD\0multi_ack symref=HEAD:refs/heads/main\n".encode())
+                  + pkt(f"{head} refs/heads/main\n".encode()) + pkt(f"{release} refs/heads/release\n".encode()) + b"0000")
+        with patch("ruavc.network.fetch", return_value=advert) as fetched:
+            self.assertEqual(network.branch_commit("golukon/russia-only-geoip", "release"), release)
+        self.assertEqual(fetched.call_args[0][0], "https://github.com/golukon/russia-only-geoip.git/info/refs?service=git-upload-pack")
+        for broken in (advert.replace(b"refs/heads/release", b"refs/heads/other"), b"zzzz", pkt(b"123 refs/heads/release\n")):
+            with patch("ruavc.network.fetch", return_value=broken), self.assertRaises(Error):
+                network.branch_commit("golukon/russia-only-geoip", "release")
+
     def test_off_only_disables_automatic_russian_rules(self):
         b = bundle()
         b["sites"] = model.parse_sites("[direct]\ngeoip:ru\nexample.org\n[proxy]\nexample.ru")

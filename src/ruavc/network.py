@@ -4,6 +4,7 @@ import concurrent.futures
 import http.client
 import ipaddress
 import json
+import re
 import secrets
 import socket
 import ssl
@@ -43,6 +44,27 @@ def fetch_json(url):
         return json.loads(fetch(url))
     except (ValueError, UnicodeError):
         raise Error("Источник вернул некорректный JSON.") from None
+
+
+def branch_commit(repository, branch):
+    """A branch head from git smart HTTP: unlike the REST API it has no 60/hour limit per shared IP."""
+    data = fetch(f"https://github.com/{repository}.git/info/refs?service=git-upload-pack", 1024 * 1024)
+    wanted = ("refs/heads/" + branch).encode()
+    at = 0
+    try:
+        while at + 4 <= len(data):
+            size = int(data[at:at + 4], 16)
+            if size < 4:  # flush packet
+                at += 4
+                continue
+            line = data[at + 4:at + size].split(b"\0")[0].rstrip(b"\n")
+            at += size
+            commit, _, ref = line.partition(b" ")
+            if ref == wanted and re.fullmatch(rb"[0-9a-f]{40}", commit):
+                return commit.decode()
+    except ValueError:
+        pass
+    raise Error("Не удалось закрепить ревизию источника geo-данных.")
 
 
 def detect_address():

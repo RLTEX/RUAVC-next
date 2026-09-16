@@ -7,7 +7,7 @@ import tempfile
 import shutil
 
 from .errors import Error
-from .network import fetch, fetch_json
+from .network import branch_commit, fetch
 from .storage import digest, encoded, mkdir, read, read_json, sync_dir, write
 
 
@@ -137,9 +137,7 @@ def download(store, config):
     metadata = {}
     for kind in ("geoip", "geosite"):
         repo = config["routing"][kind + "_repository"]
-        commit = fetch_json(f"https://api.github.com/repos/{repo}/commits/release").get("sha", "")
-        if not re.fullmatch(r"[0-9a-f]{40}", commit):
-            raise Error("Не удалось закрепить ревизию источника geo-данных.")
+        commit = branch_commit(repo, "release")
         base = f"https://raw.githubusercontent.com/{repo}/{commit}/{kind}.dat"
         expected = fetch(base + ".sha256sum", 1024).decode("ascii").split()[0].lower()
         data = fetch(base, 32 * 1024 * 1024, 60)
