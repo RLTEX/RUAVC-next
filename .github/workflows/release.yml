@@ -1,0 +1,35 @@
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+  publish:
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate version and build
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          test "$RELEASE_TAG" = "v$(cat VERSION)"
+          python3 tools/build.py --repository "$REPOSITORY"
+          python3 dist/ruavc.pyz version | grep -Fx "$(cat VERSION)"
+          cd dist
+          sha256sum -c SHA256SUMS
+      - name: Publish verified artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/ruavc-setup.sh dist/ruavc.pyz dist/SHA256SUMS \
+            --title "RUAVC $RELEASE_TAG" --notes-file docs/release-0.1.0.md --verify-tag

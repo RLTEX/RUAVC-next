@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+# Small bootstrap. The exact application digest is embedded by the release build.
+VERSION='@VERSION@'
+REPOSITORY='@REPOSITORY@'
+PACKAGE_SHA256='@SHA256@'
+
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+    printf '%s\n' 'RUAVC: установка на Ubuntu 22.04 / 24.04 / 26.04 (amd64 / arm64).' \
+        'Параметры: --address IP --domain ДОМЕН --port ПОРТ --web-port ПОРТ' \
+        '           --target ДОМЕН:443 --sni ДОМЕН --country КОД --no-direct' \
+        'После установки: sudo ruavc add phone; sudo ruavc qr phone'
+    exit 0
+fi
+if [[ ${EUID} -ne 0 ]]; then
+    printf '%s\n' 'Требуются права root: sudo bash.' >&2
+    exit 2
+fi
+if [[ ! -r /etc/os-release ]]; then
+    printf '%s\n' 'Не удалось определить ОС.' >&2
+    exit 2
+fi
+# No source/eval of configuration, including os-release.
+os_id=$(sed -n 's/^ID=//p' /etc/os-release | tr -d '"')
+os_version=$(sed -n 's/^VERSION_ID=//p' /etc/os-release | tr -d '"')
+if [[ $os_id != ubuntu || ! $os_version =~ ^(22\.04|24\.04|26\.04)$ ]]; then
+    printf '%s\n' 'Поддерживаются Ubuntu 22.04, 24.04 и 26.04.' >&2
+    exit 2
+fi
+case $(uname -m) in x86_64|aarch64) ;; *) printf '%s\n' 'Требуется amd64 или arm64.' >&2; exit 2 ;; esac
+if [[ -e /etc/ruavc/settings.env ]]; then
+    printf '%s\n' 'Обнаружена старая установка RUAVC. Требуется отдельный чистый VPS.' >&2
+    exit 2
+fi
+
+work=$(mktemp -d /tmp/ruavc-bootstrap.XXXXXXXX)
+trap 'rm -rf -- "$work"' EXIT
+if ! command -v python3 >/dev/null || ! command -v curl >/dev/null; then
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y python3 curl ca-certificates
+fi
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+    --connect-timeout 15 --max-time 120 --retry 3 \
+    "https://github.com/$REPOSITORY/releases/download/v$VERSION/ruavc.pyz" -o "$work/ruavc.pyz"
+printf '%s  %s\n' "$PACKAGE_SHA256" "$work/ruavc.pyz" | sha256sum --check --status
+/usr/bin/python3 -I "$work/ruavc.pyz" setup "$@"
