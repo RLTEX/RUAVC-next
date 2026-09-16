@@ -24,6 +24,14 @@ def redact(text):
     return text
 
 
+def probe_diagnostic(bundle, device, curl_error, xray_output, limit=4000):
+    text = "curl: " + curl_error.decode("utf-8", "replace").strip()[-500:] + "\nxray: " + xray_output.decode("utf-8", "replace")[-limit:]
+    # Known credentials are removed verbatim before the generic patterns run.
+    for value in (device["uuid"], device["token"], *bundle["secrets"].values()):
+        text = text.replace(value, "[скрыто]")
+    return redact(text)
+
+
 def log(message):
     path = Path("/var/log/ruavc")
     mkdir(path)
@@ -140,19 +148,26 @@ class Services:
             write(config, encoded(render.probe_client(bundle, device, number)))
             binary = self.xray_path(bundle)
             run([binary, "run", "-test", "-config", config], quiet=True)
-            process = subprocess.Popen([str(binary), "run", "-config", str(config)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                       env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            output = Path(work) / "client.log"
+            fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(fd, "wb") as sink:
+                process = subprocess.Popen([str(binary), "run", "-config", str(config)], stdout=sink, stderr=subprocess.STDOUT,
+                                           env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            failure, detail = None, b""
             try:
                 for _ in range(50):
                     if process.poll() is not None:
-                        raise Error("Временный Xray-клиент не запустился.")
+                        failure = "Временный Xray-клиент не запустился."
+                        break
                     if listening(number):
                         break
                     time.sleep(0.1)
-                # Only a non-secret probe URL is in argv. Device keys stay in 0600 file.
-                result = run(["/usr/bin/curl", "--silent", "--show-error", "--fail", "--proto", "=https", "--max-time", "15", "--socks5-hostname", f"127.0.0.1:{number}", "--output", "/dev/null", bundle["config"]["probe_url"]], timeout=20, check=False, quiet=True)
-                if process.poll() is not None or result.returncode:
-                    raise Error("VLESS self-test VPS не прошёл: ключ, Reality handshake или выход в Интернет.")
+                if failure is None:
+                    # Only a non-secret probe URL is in argv. Device keys stay in 0600 file.
+                    result = run(["/usr/bin/curl", "--silent", "--show-error", "--fail", "--proto", "=https", "--max-time", "15", "--socks5-hostname", f"127.0.0.1:{number}", "--output", "/dev/null", bundle["config"]["probe_url"]], timeout=20, check=False, quiet=True)
+                    if process.poll() is not None or result.returncode:
+                        failure, detail = "VLESS self-test VPS не прошёл: ключ, Reality handshake или выход в Интернет.", result.stderr
+                        time.sleep(0.5)  # Xray reports the outbound error right after closing the SOCKS stream.
             finally:
                 process.terminate()
                 try:
@@ -160,6 +175,9 @@ class Services:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=5)
+            if failure:
+                log("VLESS self-test: " + probe_diagnostic(bundle, device, detail, read(output)))
+                raise Error(failure + " Диагностика: /var/log/ruavc/manager.log.", "sudo ruavc doctor")
 
     def health(self, generation, bundle, revoked_tokens=()):
         for name in self.names:

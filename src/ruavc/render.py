@@ -88,7 +88,8 @@ def probe_client(bundle, device, socks_port):
     user = {"id": device["uuid"], "encryption": "none"}
     if r["flow"]:
         user["flow"] = r["flow"]
-    return {"log": {"loglevel": "none"}, "inbounds": [{"listen": "127.0.0.1", "port": socks_port, "protocol": "socks", "settings": {"udp": False}}],
+    # Info level is where Xray reports REALITY/VLESS failures; it contains no credentials.
+    return {"log": {"loglevel": "info", "access": "none", "dnsLog": False}, "inbounds": [{"listen": "127.0.0.1", "port": socks_port, "protocol": "socks", "settings": {"udp": False}}],
             "outbounds": [{"protocol": "vless", "settings": {"vnext": [{"address": "127.0.0.1", "port": r["port"], "users": [user]}]},
             "streamSettings": {"network": "raw", "security": "reality", "realitySettings": {"serverName": r["sni"], "fingerprint": r["fingerprint"], "password": s["public_key"], "shortId": s["short_id"]}}}]}
 

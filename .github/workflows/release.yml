@@ -4,6 +4,9 @@ on:
     tags: ['v*']
 permissions:
   contents: read
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 jobs:
   checks:
     uses: ./.github/workflows/checks.yml
@@ -13,7 +16,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       - name: Validate version and build
@@ -22,6 +25,7 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           test "$RELEASE_TAG" = "v$(cat VERSION)"
+          test -s "docs/release-$(cat VERSION).md"
           python3 tools/build.py --repository "$REPOSITORY"
           python3 dist/ruavc.pyz version | grep -Fx "$(cat VERSION)"
           cd dist
@@ -30,6 +34,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           gh release create "$RELEASE_TAG" dist/ruavc-setup.sh dist/ruavc.pyz dist/SHA256SUMS \
-            --title "RUAVC $RELEASE_TAG" --notes-file docs/release-0.1.0.md --verify-tag
+            --repo "$REPOSITORY" --title "RUAVC $RELEASE_TAG" \
+            --notes-file "docs/release-${RELEASE_TAG#v}.md" --verify-tag
