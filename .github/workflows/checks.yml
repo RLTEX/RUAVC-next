@@ -75,12 +75,25 @@ jobs:
           EOF
           docker run -d --name vps --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
             --tmpfs /run:exec --tmpfs /run/lock -v "$PWD:/source:ro" ruavc-vps
-          docker exec vps bash -c 'systemctl is-system-running --wait || systemctl --failed --no-pager'
-          docker exec vps bash -c '
-            set -e
-            cp -r /source /test
-            chown -R root:root /test
-            cd /test
-            python3 tools/build.py
-            python3 tests/systemd_integration.py
-          '
+          set -o pipefail
+          {
+            docker exec vps bash -c 'systemctl is-system-running --wait || systemctl --failed --no-pager'
+            docker exec vps bash -c '
+              set -e
+              cp -r /source /test
+              chown -R root:root /test
+              cd /test
+              python3 tools/build.py
+              python3 tests/systemd_integration.py
+            '
+          } 2>&1 | tee "$RUNNER_TEMP/systemd.log"
+      - name: Report systemd installation failure
+        if: failure()
+        # Annotations stay readable without access to the full job log.
+        run: |
+          test -f "$RUNNER_TEMP/systemd.log" || exit 0
+          tail -n 150 "$RUNNER_TEMP/systemd.log" | split -l 30 - "$RUNNER_TEMP/part-"
+          for part in "$RUNNER_TEMP"/part-*; do
+            body=$(sed -e 's/%/%25/g' -e 's/\r/%0D/g' "$part" | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/%0A/g')
+            echo "::error title=systemd $(basename "$part")::$body"
+          done
