@@ -55,9 +55,9 @@ def routing(bundle, ru_sites=()):
     r = c["routing"]
     base = origin(c) + "/rules/" + bundle["release"]["dataset"]
     result = {"Name": "Маршрутизация сервера", "GlobalProxy": "true", "LastUpdated": str(bundle["release"]["routing_revision"]),
-              "RemoteDNSType": "DoH", "RemoteDNSDomain": r["remote_dns"], "RemoteDNSIP": r["remote_dns_ip"],
-              "DomesticDNSType": "DoH", "DomesticDNSDomain": r["domestic_dns"], "DomesticDNSIP": r["domestic_dns_ip"],
-              "DnsHosts": {urlsplit(r["remote_dns"]).hostname: r["remote_dns_ip"], urlsplit(r["domestic_dns"]).hostname: r["domestic_dns_ip"]},
+              "RemoteDNSType": "DoH" if r["remote_dns"] else "DoU", "RemoteDNSDomain": r["remote_dns"], "RemoteDNSIP": r["remote_dns_ip"],
+              "DomesticDNSType": "DoH" if r["domestic_dns"] else "DoU", "DomesticDNSDomain": r["domestic_dns"], "DomesticDNSIP": r["domestic_dns_ip"],
+              "DnsHosts": {urlsplit(r[k + "_dns"]).hostname: r[k + "_dns_ip"] for k in ("remote", "domestic") if r[k + "_dns"]},
               "Geoipurl": base + "/geoip.dat", "Geositeurl": base + "/geosite.dat",
               "DirectSites": RU_SITES + list(ru_sites) if r["direct"] else [], "DirectIp": LOCAL_IPS + (["geoip:ru"] if r["direct"] else []),
               "ProxySites": [], "ProxyIp": [], "BlockSites": [], "BlockIp": [],

@@ -83,9 +83,13 @@ def defaults(public_address, subscription_domain, country=""):
                     "geoip_repository": "golukon/russia-only-geoip",
                     "geosite_repository": "golukon/russia-only-geosite",
                     "remote_dns": "https://cloudflare-dns.com/dns-query", "remote_dns_ip": "1.1.1.1",
-                    "domestic_dns": "https://common.dot.dns.yandex.net/dns-query", "domestic_dns_ip": "77.88.8.8"},
+                    # Empty *_dns: plain DNS to *_dns_ip. Yandex serves no DoH, only DoT and UDP/TCP.
+                    "domestic_dns": "", "domestic_dns_ip": "77.88.8.8"},
         "probe_url": "https://www.gstatic.com/generate_204",
     }
+
+
+BROKEN_DOMESTIC_DNS = "https://common.dot.dns.yandex.net/dns-query"
 
 
 def migrate(config):
@@ -94,6 +98,11 @@ def migrate(config):
     require(result["schema"] <= SCHEMA, "Конфигурация создана более новой версией RUAVC; требуется обновление программы.")
     # No older public schema exists in 0.1.0. Unknown formats must not be guessed.
     require(result["schema"] == SCHEMA, "Неизвестная старая схема; автоматическая миграция не определена.")
+    routing = result.get("routing")
+    # 0.1.0-0.1.2 default: this endpoint returns empty replies, so INCY waited
+    # for its 4 s DNS timeout on every new domain.
+    if isinstance(routing, dict) and routing.get("domestic_dns") == BROKEN_DOMESTIC_DNS:
+        routing["domestic_dns"] = ""
     return result
 
 
@@ -175,7 +184,9 @@ def validate(bundle):
     for key in ("geoip_repository", "geosite_repository"):
         require(re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+", routing[key]) is not None, "Некорректный GitHub repository.")
     for prefix in ("remote", "domestic"):
-        https_url(routing[prefix + "_dns"])
+        require(isinstance(routing[prefix + "_dns"], str), "DNS: URL DoH или пустая строка.")
+        if routing[prefix + "_dns"]:
+            https_url(routing[prefix + "_dns"])
         ipaddress.ip_address(routing[prefix + "_dns_ip"])
     https_url(c["probe_url"])
     s = bundle["secrets"]

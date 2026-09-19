@@ -54,7 +54,7 @@
 | `web.port` | Порт HTTPS подписок |
 | `routing.direct` | `on/off` или `true/false`; то же, что `direct` |
 | `routing.interval_hours` | Интервал загрузки наборов, 1–168 часов |
-| `routing.remote_dns`, `routing.domestic_dns` | URL DoH |
+| `routing.remote_dns`, `routing.domestic_dns` | URL DoH; пустое значение — обычный DNS на `*_dns_ip` |
 | `routing.remote_dns_ip`, `routing.domestic_dns_ip` | IP для bootstrap DNS |
 | `routing.geoip_repository`, `routing.geosite_repository` | GitHub-источники с веткой release и SHA-256 |
 | `probe_url` | HTTPS-адрес для VLESS self-test, успешный HTTP-ответ |

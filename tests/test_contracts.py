@@ -49,6 +49,22 @@ class RoutingContract(unittest.TestCase):
             with self.assertRaises(Error):
                 datasets.direct_sites(store, "../x")
 
+    def test_domestic_dns_is_plain_yandex_dns(self):
+        # Yandex has no DoH endpoint: the old URL answered empty replies and INCY
+        # waited its 4 s DNS timeout before every new connection.
+        p = render.routing(bundle())
+        self.assertEqual((p["DomesticDNSType"], p["DomesticDNSDomain"], p["DomesticDNSIP"]), ("DoU", "", "77.88.8.8"))
+        self.assertEqual((p["RemoteDNSType"], p["RemoteDNSDomain"]), ("DoH", "https://cloudflare-dns.com/dns-query"))
+        self.assertEqual(p["DnsHosts"], {"cloudflare-dns.com": "1.1.1.1"})
+        old = bundle()
+        old["config"]["routing"]["domestic_dns"] = model.BROKEN_DOMESTIC_DNS
+        migrated = model.migrate(old["config"])
+        self.assertEqual(migrated["routing"]["domestic_dns"], "")
+        self.assertEqual(old["config"]["routing"]["domestic_dns"], model.BROKEN_DOMESTIC_DNS)
+        custom = bundle()["config"]
+        custom["routing"]["domestic_dns"] = "https://dns.example.com/dns-query"
+        self.assertEqual(model.migrate(custom)["routing"]["domestic_dns"], "https://dns.example.com/dns-query")
+
     def test_dataset_revision_comes_from_git_refs(self):
         from unittest.mock import patch
 
